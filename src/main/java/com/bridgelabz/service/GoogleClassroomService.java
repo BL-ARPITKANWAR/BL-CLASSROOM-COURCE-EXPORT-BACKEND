@@ -1,14 +1,24 @@
-
 package com.bridgelabz.service;
 import com.bridgelabz.csvUtiles.CSVWriterUtil;
 import com.fasterxml.jackson.databind.JsonNode;
+//import com.google.api.client.googleapis.javanet.GoogleNetHttpTransport;
+//import com.google.api.client.http.HttpRequestInitializer;
+//import com.google.api.client.http.HttpResponseException;
 import com.google.api.client.json.jackson2.JacksonFactory;
+//import com.google.api.services.drive.Drive;
+//import com.google.api.services.sheets.v4.Sheets;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+
+//import java.io.IOException;
+//import java.security.GeneralSecurityException;
 import java.util.*;
 import java.util.AbstractMap.SimpleEntry;
 import java.util.concurrent.*;
 import java.util.logging.Logger;
+
+
+
 
 
 @Service
@@ -28,7 +38,9 @@ public class GoogleClassroomService {
     @Autowired
     private GoogleSheetsDriveService sheetExporterService;
 
-    private static final String DRIVE_FOLDER_ID = "1pI5yE2thXmvLlw39H6jZ-0FschsQffhJ";
+    // Google Drive folder ID where spreadsheets will be saved
+    // URL: https://drive.google.com/drive/folders/1EiCrMorjmsfyS-INQfoee5gjjm-FSEGh
+    private static final String DRIVE_FOLDER_ID = "1EiCrMorjmsfyS-INQfoee5gjjm-FSEGh";
     private static final Logger logger = Logger.getLogger("GoogleClassroomService");
     private static final String APPLICATION_NAME = "Google Classroom CSV Exporter";
     private static final JacksonFactory JSON_FACTORY = JacksonFactory.getDefaultInstance();
@@ -182,5 +194,136 @@ public class GoogleClassroomService {
         if (courseName.matches(".*B3P\\d+.*")) return "B3";
         if (courseName.matches(".*B4P\\d+.*")) return "B4";
         return "Other_Batches";
+    }
+
+    /**
+     * Exports only PCCOE courses to a separate Google Spreadsheet.
+     * Creates one tab per PCCOE course with student data and submission status.
+     * Case-sensitive: Only matches courses starting with "PCCOE" (all capital letters)
+     * 
+     * @param accessToken Google OAuth2 access token
+     * @return URL of the created spreadsheet
+     * @throws Exception if export fails
+     */
+    public String exportPccoeCoursesData(String accessToken) throws Exception {
+        // Storage for course-wise student data and coursework titles
+        Map<String, Map<String, SimpleEntry<String, String>>> courseStudentData = new LinkedHashMap<>();
+        Map<String, List<String>> courseWorkTitles = new LinkedHashMap<>();
+
+        // Step 1: Fetch only PCCOE courses (courses starting with "PCCOE" - case-sensitive)
+        List<JsonNode> pccoeCourses = sheetExporterService.executeWithRetry(
+                () -> courseService.getCoursesByPrefix(accessToken, "PCCOE"), 4);
+        sheetExporterService.throttle();
+
+        logger.info("Found " + pccoeCourses.size() + " PCCOE courses");
+
+        // Step 2: Process each PCCOE course concurrently using thread pool
+        ExecutorService executor = Executors.newFixedThreadPool(4);
+        List<CompletableFuture<Void>> futures = new ArrayList<>();
+
+        for (JsonNode course : pccoeCourses) {
+            CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
+                try {
+                    String courseId = course.path("id").asText();
+                    // Get original course name for display
+                    String originalCourseName = course.path("name").asText();
+                    
+                    // Case-sensitive filter: Only process if course name starts exactly with "PCCOE"
+                    // Trims whitespace before comparison to handle extra spaces in course names
+                    String trimmedCourseName = originalCourseName != null ? originalCourseName.trim() : "";
+                    if (!trimmedCourseName.startsWith("PCCOE")) {
+                        logger.info("Skipping non-PCCOE course (case-sensitive): " + originalCourseName);
+                        return;
+                    }
+                    
+                    // Sanitize course name for use as sheet tab name (remove special chars)
+                    String courseName = originalCourseName.replaceAll("[^a-zA-Z0-9]", "_");
+
+                    // Only process courses where the user is a teacher and course is active
+                    boolean isTeacher = course.path("courseState").asText().equals("ACTIVE") 
+                            && course.has("teacherFolder");
+                    if (!isTeacher) {
+                        logger.info("Skipping PCCOE course " + courseName + " - not a teacher or inactive");
+                        return;
+                    }
+
+                    // Fetch students for this course with retry logic
+                    Map<String, Map<String, String>> studentsData = sheetExporterService.executeWithRetry(
+                            () -> studentService.getStudents(courseId, accessToken), 4);
+                    sheetExporterService.throttle();
+
+                    // Fetch coursework (assignments) for this course
+                    Map<String, String> courseworkMap = sheetExporterService.executeWithRetry(
+                            () -> courseworkService.getCourseworkTitles(courseId, accessToken), 4);
+                    sheetExporterService.throttle();
+
+                    List<String> courseworkTitles = new ArrayList<>(courseworkMap.values());
+
+                    // Fetch student submissions for each coursework
+                    submissionService.getSubmissions(courseId, accessToken, courseworkMap, studentsData);
+                    sheetExporterService.throttle();
+
+                    // Mark missing submissions as "Missing" for each student
+                    for (Map<String, String> student : studentsData.values()) {
+                        for (String title : courseworkTitles) {
+                            student.putIfAbsent(title, "Missing");
+                        }
+                    }
+
+                    // Convert student data to the format required for spreadsheet export
+                    Map<String, SimpleEntry<String, String>> convertedStudentData = new LinkedHashMap<>();
+                    for (Map.Entry<String, Map<String, String>> entry : studentsData.entrySet()) {
+                        Map<String, String> studentMap = entry.getValue();
+                        String studentName = studentMap.getOrDefault("name", entry.getKey());
+                        String email = studentMap.getOrDefault("email", "");
+
+                        // Build comma-separated status values for each coursework
+                        StringBuilder rowBuilder = new StringBuilder();
+                        for (String title : courseworkTitles) {
+                            rowBuilder.append(",").append(studentMap.getOrDefault(title, "Missing"));
+                        }
+
+                        convertedStudentData.put(studentName, new SimpleEntry<>(email, rowBuilder.substring(1)));
+                    }
+
+                    // Store course data for spreadsheet creation
+                    // Case-sensitive: Only store if course name starts exactly with "PCCOE"
+                    // Uses trimmed name to handle any remaining whitespace
+                    String trimmedSanitizedName = courseName != null ? courseName.trim() : "";
+                    if (trimmedSanitizedName.startsWith("PCCOE")) {
+                        courseStudentData.put(courseName, convertedStudentData);
+                        courseWorkTitles.put(courseName, courseworkTitles);
+                        logger.info("Processed PCCOE course: " + courseName + " with " + convertedStudentData.size() + " students");
+                    }
+
+                } catch (Exception e) {
+                    logger.severe("Error processing PCCOE course: " + e.getMessage());
+                }
+            }, executor);
+            futures.add(future);
+        }
+
+        // Wait for all course processing to complete
+        CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
+        executor.shutdown();
+
+        // Log how many PCCOE courses were processed
+        logger.info("Total PCCOE courses processed: " + courseStudentData.size());
+        for (String courseName : courseStudentData.keySet()) {
+            logger.info("PCCOE course in spreadsheet: " + courseName);
+        }
+
+        // Step 3: Create spreadsheet with PCCOE courses only
+        // Uses "PCCOE" as the spreadsheet name with timestamp
+        String sheetUrl = sheetExporterService.exportToGoogleSheetForBatch(
+                "PCCOE",
+                courseStudentData,
+                courseWorkTitles,
+                accessToken,
+                DRIVE_FOLDER_ID
+        );
+
+        logger.info("PCCOE spreadsheet created: " + sheetUrl);
+        return sheetUrl;
     }
 }

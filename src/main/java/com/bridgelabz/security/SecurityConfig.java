@@ -19,7 +19,7 @@ public class SecurityConfig
                         .anyRequest().authenticated()
                 )
                 .oauth2Login(oauth2 -> oauth2
-                        .defaultSuccessUrl("/classroom/all-student-submissions", true) // after successful login.failureUrl("/oauth2/error") // on OAuth failure
+                        .defaultSuccessUrl("/classroom/pccoe-cource", true) // Redirect to PCCOE export after login
                         .failureUrl("/oauth2/error") // on OAuth failure
                 );
         return http.build();

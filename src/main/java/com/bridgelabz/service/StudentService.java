@@ -57,6 +57,7 @@ public class StudentService {
         return WebClient.builder()
                 .baseUrl("https://classroom.googleapis.com")
                 .defaultHeader("Authorization", "Bearer " + token)
+                .codecs(codecs -> codecs.defaultCodecs().maxInMemorySize(50 * 1024 * 1024))
                 .build();
     }
 }
