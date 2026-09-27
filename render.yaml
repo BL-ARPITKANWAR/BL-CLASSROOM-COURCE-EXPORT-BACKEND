@@ -1,0 +1,21 @@
+services:
+  - type: web
+    name: google-classroom-report-backend
+    env: docker
+    dockerfilePath: ./Dockerfile
+    plan: free
+    region: oregon
+    envVars:
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      - key: GOOGLE_REDIRECT_URI
+        value: https://google-classroom-report-backend.onrender.com/login/oauth2/code/google
+      - key: BRIDGELABZ_EMAIL_DOMAIN
+        value: bridgelabz.com
+      - key: PCCOE_ALLOWED_EMAILS
+        sync: false
+      - key: JAVA_OPTS
+        value: "-Xms256m -Xmx512m"
+    healthCheckPath: /actuator/health
