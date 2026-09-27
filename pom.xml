@@ -19,7 +19,7 @@
 	<description>Demo project for Spring Boot</description>
 
 	<properties>
-		<java.version>24</java.version>
+		<java.version>21</java.version>
 	</properties>
 
 	<dependencies>
@@ -131,18 +131,12 @@
 				<artifactId>maven-compiler-plugin</artifactId>
 				<version>3.13.0</version>
 				<configuration>
-					<release>24</release>
-					<compilerArgs>
-						<arg>--enable-preview</arg>
-					</compilerArgs>
+					<release>21</release>
 				</configuration>
 			</plugin>
 			<plugin>
 				<groupId>org.springframework.boot</groupId>
 				<artifactId>spring-boot-maven-plugin</artifactId>
-				<configuration>
-					<jvmArguments>--enable-preview</jvmArguments>
-				</configuration>
 			</plugin>
 		</plugins>
 	</build>
