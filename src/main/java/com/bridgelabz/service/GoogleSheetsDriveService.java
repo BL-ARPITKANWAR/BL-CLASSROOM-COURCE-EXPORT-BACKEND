@@ -72,8 +72,8 @@ public class GoogleSheetsDriveService {
             String finalBatchName = batchName + "_" + timestamp;
 
             String query = String.format(
-                    "name contains '%s' and '%s' in parents and mimeType='application/vnd.google-apps.spreadsheet' and trashed=false",
-                    batchName, driveFolderId
+                    "name contains '%s' and mimeType='application/vnd.google-apps.spreadsheet' and trashed=false",
+                    batchName
             );
             FileList result = driveService.files().list().setQ(query).execute();
 
@@ -297,11 +297,12 @@ public class GoogleSheetsDriveService {
 
             logger.info("Batch update response: " + batchResponse.getTotalUpdatedCells() + " cells updated in total.");
 
-            driveService.files().update(spreadsheetId, null)
-                    .setAddParents(driveFolderId)
-                    .setFields("id, parents")
-                    .execute();
-            logger.info("Moved spreadsheet to Drive folder: " + driveFolderId);
+            // Commented out to prevent 404 error when folder doesn't exist
+            // driveService.files().update(spreadsheetId, null)
+            //         .setAddParents(driveFolderId)
+            //         .setFields("id, parents")
+            //         .execute();
+            logger.info("Spreadsheet saved in root Drive folder (default).");
 
             return "https://docs.google.com/spreadsheets/d/" + spreadsheetId;
 
@@ -324,8 +325,8 @@ public class GoogleSheetsDriveService {
     ) throws IOException {
         String reportName = "All Batches report";
         String query = String.format(
-                "name = '%s' and '%s' in parents and mimeType='application/vnd.google-apps.spreadsheet' and trashed=false",
-                reportName, folderId
+                "name = '%s' and mimeType='application/vnd.google-apps.spreadsheet' and trashed=false",
+                reportName
         );
         FileList result = driveService.files().list().setQ(query).execute();
 
@@ -333,8 +334,7 @@ public class GoogleSheetsDriveService {
         if (result.getFiles().isEmpty()) {
             File fileMetadata = new File()
                     .setName(reportName)
-                    .setMimeType("application/vnd.google-apps.spreadsheet")
-                    .setParents(Collections.singletonList(folderId));
+                    .setMimeType("application/vnd.google-apps.spreadsheet");
             File createdFile = driveService.files()
                     .create(fileMetadata)
                     .setFields("id")

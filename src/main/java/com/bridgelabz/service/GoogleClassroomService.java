@@ -1,5 +1,4 @@
 package com.bridgelabz.service;
-import com.bridgelabz.csvUtiles.CSVWriterUtil;
 import com.fasterxml.jackson.databind.JsonNode;
 //import com.google.api.client.googleapis.javanet.GoogleNetHttpTransport;
 //import com.google.api.client.http.HttpRequestInitializer;
@@ -92,8 +91,6 @@ public class GoogleClassroomService {
                             student.putIfAbsent(title, "Missing");
                         }
                     }
-
-                    CSVWriterUtil.writeCSV(courseName, studentsData, courseworkTitles);
 
                     Map<String, SimpleEntry<String, String>> convertedStudentData = new LinkedHashMap<>();
                     for (Map.Entry<String, Map<String, String>> entry : studentsData.entrySet()) {

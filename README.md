@@ -247,9 +247,6 @@ CSV Reports    Google Sheets     Google Drive</code></pre>
 │       │           ├── model/
 │       │           │   └── StudentInfo.java
 │       │           │
-│       │           ├── csvUtiles/
-│       │           │   └── CSVWriterUtil.java
-│       │           │
 │       │           ├── security/
 │       │           │   └── SecurityConfig.java
 │       │           │
@@ -290,8 +287,6 @@ CSV Reports    Google Sheets     Google Drive</code></pre>
 <li>Manage Drive folders</li>
 <li>Upload/store generated reports</li>
 </ul>
-<h3>CSVWriterUtil</h3>
-<p>Responsible for generating local CSV files.</p>
 <h3>SecurityConfig</h3>
 <p>Configures Spring Security and Google OAuth2 authentication.</p>
 <h3>StudentInfo</h3>

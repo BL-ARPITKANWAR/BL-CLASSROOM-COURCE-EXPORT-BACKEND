@@ -23,47 +23,65 @@ public class CourseService {
         List<JsonNode> list = new ArrayList<>();
 
         try {
-            String coursesJson = client.get()
-                    .uri("/v1/courses?teacherId=me")
-                    .retrieve()
-                    .onStatus(
-                            status -> status.is4xxClientError(),
-                            response -> {
-                                logger.warning("Google Classroom API returned 4xx error while fetching courses");
-                                return response.createException();
-                            })
-                    .onStatus(
-                            status -> status.is5xxServerError(),
-                            response -> {
-                                logger.severe("Google Classroom API returned 5xx error while fetching courses");
-                                return response.createException();
-                            })
-                    .bodyToMono(String.class)
-                    .onErrorResume(WebClientResponseException.class, ex -> {
-                        logger.severe("Error fetching courses: " + ex.getMessage());
-                        return java.util.Optional.of("{}").map(reactor.core.publisher.Mono::just).get();
-                    })
-                    .block();
+            String pageToken = null;
+            int pageCount = 0;
+            do {
+                pageCount++;
+                String currentPageToken = pageToken;
+                logger.info("Fetching courses page " + pageCount + (currentPageToken != null ? " (token: " + currentPageToken + ")" : ""));
+                String coursesJson = client.get()
+                        .uri(uriBuilder -> {
+                            var builder = uriBuilder.path("/v1/courses")
+                                    .queryParam("teacherId", "me")
+                                    .queryParam("pageSize", 100);
+                            if (currentPageToken != null && !currentPageToken.isBlank()) {
+                                builder.queryParam("pageToken", currentPageToken);
+                            }
+                            return builder.build();
+                        })
+                        .retrieve()
+                        .onStatus(
+                                status -> status.is4xxClientError(),
+                                response -> {
+                                    logger.severe("Google Classroom API returned 4xx error while fetching courses: " + response.statusCode());
+                                    return response.bodyToMono(String.class)
+                                            .flatMap(body -> {
+                                                logger.severe("Error response body: " + body);
+                                                return response.createException();
+                                            });
+                                })
+                        .onStatus(
+                                status -> status.is5xxServerError(),
+                                response -> {
+                                    logger.severe("Google Classroom API returned 5xx error while fetching courses: " + response.statusCode());
+                                    return response.createException();
+                                })
+                        .bodyToMono(String.class)
+                        .block();
 
-            JsonNode root = mapper.readTree(coursesJson).path("courses");
-            // if (root.isArray()) {
-            // root.forEach(list::add);
-            // }
-            if (root.isArray()) {
-                for (JsonNode course : root) {
-
-                    String courseName = course.path("name").asText();
-
-                    if (courseName.toUpperCase().startsWith("P") ) {
-                        list.add(course);
-                    }
+                logger.fine("Raw API response: " + coursesJson);
+                JsonNode response = mapper.readTree(coursesJson);
+                JsonNode courses = response.path("courses");
+                int pageCourses = 0;
+                if (courses.isArray()) {
+                    courses.forEach(list::add);
+                    pageCourses = courses.size();
                 }
-            }
+                logger.info("Page " + pageCount + " returned " + pageCourses + " courses. Total so far: " + list.size());
+                pageToken = response.path("nextPageToken").asText("");
+            } while (!pageToken.isBlank());
+            logger.info("Finished fetching all courses. Total: " + list.size());
+        } catch (WebClientResponseException e) {
+            logger.severe("WebClientResponseException fetching courses: " + e.getStatusCode() + " - " + e.getMessage());
+            logger.severe("Response body: " + e.getResponseBodyAsString());
+            throw e;
         } catch (Exception e) {
             logger.severe("Unexpected error while fetching courses: " + e.getMessage());
+            e.printStackTrace();
+            throw new IllegalStateException("Unable to fetch accessible classrooms from Google Classroom.", e);
         }
 
-        return list; // returns empty if failed
+        return list;
     }
 
     /**
