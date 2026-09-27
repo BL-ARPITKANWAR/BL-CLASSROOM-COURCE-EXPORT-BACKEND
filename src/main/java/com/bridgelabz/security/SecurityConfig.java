@@ -1,5 +1,6 @@
 package com.bridgelabz.security;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
@@ -21,18 +22,30 @@ import java.util.List;
 
 @Configuration
 @EnableWebSecurity
-public class SecurityConfig
-{
+public class SecurityConfig {
     private final BridgeLabzOAuth2UserService oauth2UserService;
     private final OAuth2AuthorizedClientService authorizedClientService;
+    private final String frontendUrl;
+    private final String allowedOrigins;
 
-    public SecurityConfig(BridgeLabzOAuth2UserService oauth2UserService, OAuth2AuthorizedClientService authorizedClientService) {
+    public SecurityConfig(
+            BridgeLabzOAuth2UserService oauth2UserService,
+            OAuth2AuthorizedClientService authorizedClientService,
+            @Value("${app.frontend.url:http://localhost:3000}") String frontendUrl,
+            @Value("${app.cors.allowed-origins:http://localhost:3000}") String allowedOrigins) {
         this.oauth2UserService = oauth2UserService;
         this.authorizedClientService = authorizedClientService;
+        this.frontendUrl = frontendUrl;
+        this.allowedOrigins = allowedOrigins;
     }
 
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
+        String successUrl = frontendUrl + "/dashboard";
+        String failureUrl = frontendUrl + "/register?error=access-denied";
+        String logoutUrl = frontendUrl + "/";
+        List<String> corsOrigins = List.of(allowedOrigins.split(","));
+
         http
                 .csrf(AbstractHttpConfigurer::disable)
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
@@ -42,13 +55,13 @@ public class SecurityConfig
                 )
                 .oauth2Login(oauth2 -> oauth2
                         .userInfoEndpoint(userInfo -> userInfo.userService(oauth2UserService))
-                        .defaultSuccessUrl("http://localhost:3000/dashboard", true)
-                        .failureUrl("http://localhost:3000/register?error=access-denied")
+                        .defaultSuccessUrl(successUrl, true)
+                        .failureUrl(failureUrl)
                         .authorizedClientRepository(authorizedClientRepository())
                 )
                 .logout(logout -> logout
                         .logoutUrl("/logout")
-                        .logoutSuccessUrl("http://localhost:3000/")
+                        .logoutSuccessUrl(logoutUrl)
                         .clearAuthentication(true)
                         .invalidateHttpSession(true)
                         .deleteCookies("JSESSIONID")
@@ -75,7 +88,7 @@ public class SecurityConfig
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
-        configuration.setAllowedOrigins(List.of("http://localhost:3000"));
+        configuration.setAllowedOrigins(List.of(allowedOrigins.split(",")));
         configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
         configuration.setAllowedHeaders(List.of("*"));
         configuration.setAllowCredentials(true);
